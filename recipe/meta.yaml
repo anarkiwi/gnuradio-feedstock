@@ -20,6 +20,7 @@ source:
     - 0010-grc-Fix-cairo-assertion-failure-by-not-storing-refer.patch
     - 0011-grc-Don-t-query-and-use-display-scale-factor-in-Draw.patch
     - 0012-filter-python-Fix-polezero_plot.py-compatibility-wit.patch
+    - 0013-gr-soapy-add-gr-uhd-tags-to-source-blocks.patch
 
 build:
   number: 8
