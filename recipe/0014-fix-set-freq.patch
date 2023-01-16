@@ -1,0 +1,29 @@
+diff --git a/gr-soapy/lib/source_impl.cc b/gr-soapy/lib/source_impl.cc
+index a519939..398bb9e 100644
+--- a/gr-soapy/lib/source_impl.cc
++++ b/gr-soapy/lib/source_impl.cc
+@@ -60,6 +60,11 @@ void source_impl::set_frequency(size_t channel, const std::string& name, double
+     block_impl::set_frequency(channel, name, frequency);
+     _add_tag = true;
+ }
++void source_impl::set_frequency(size_t channel, double frequency)
++{
++    block_impl::set_frequency(channel, name, frequency);
++    _add_tag = true;
++}
+ void source_impl::set_hardware_time(long long timeNs, const std::string& what)
+ {
+     block_impl::set_hardware_time(timeNs, what);
+diff --git a/gr-soapy/lib/source_impl.h b/gr-soapy/lib/source_impl.h
+index 9439e30..b98b02c 100644
+--- a/gr-soapy/lib/source_impl.h
++++ b/gr-soapy/lib/source_impl.h
+@@ -52,6 +52,8 @@ public:
+ 
+     void
+     set_frequency(size_t channel, const std::string& name, double frequency) override;
++    void
++    set_frequency(size_t channel, double frequency) override;
+     void set_hardware_time(long long timeNs, const std::string& what) override;
+     void set_sample_rate(size_t channel, double sample_rate) override;
+ 
