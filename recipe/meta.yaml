@@ -23,7 +23,7 @@ source:
     - 0013-gr-soapy-add-gr-uhd-tags-to-source-blocks.patch
 
 build:
-  number: 8
+  number: 999
 
 requirements:
   build:
