@@ -1,0 +1,28 @@
+diff --git a/gr-soapy/lib/source_impl.cc b/gr-soapy/lib/source_impl.cc
+index a8a2bf2..3d38aa2 100644
+--- a/gr-soapy/lib/source_impl.cc
++++ b/gr-soapy/lib/source_impl.cc
+@@ -6,6 +6,10 @@
+  * SPDX-License-Identifier: GPL-3.0-or-later
+  */
+ 
++#include <cstdio>
++#include <chrono>
++#include <cstdint>
++
+ #ifdef HAVE_CONFIG_H
+ #include "config.h"
+ #endif
+@@ -62,7 +66,12 @@ void source_impl::set_frequency(size_t channel, const std::string& name, double
+ }
+ void source_impl::set_frequency(size_t channel, double frequency)
+ {
++    uint64_t before_t = std::chrono::duration_cast<std::chrono::microseconds>
++              (std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+     block_impl::set_frequency(channel, frequency);
++    uint64_t after_t = std::chrono::duration_cast<std::chrono::microseconds>
++              (std::chrono::high_resolution_clock::now().time_since_epoch()).count();
++    std::cout << "set_frequency() took " << after_t - before_t << "us" << std::endl;
+     _add_tag = true;
+ }
+ void source_impl::set_hardware_time(long long timeNs, const std::string& what)

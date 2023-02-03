@@ -1,0 +1,170 @@
+From 3eea1057c53842476f809a62499ee6b8dc080d82 Mon Sep 17 00:00:00 2001
+From: NZSmartie <nzsmartie@gmail.com>
+Date: Mon, 29 Aug 2022 08:30:58 +1200
+Subject: [PATCH] gr-soapy: Add gr-uhd tags to source blocks
+
+Tag the output stream with the frequency, sample rate and hardware time.
+Following gr-uhd's rx_freq, rx_rate and rx_time tags.
+
+Closes #6106
+
+Signed-off-by: Roman Vaughan <nzsmartie@gmail.com>
+---
+ gr-soapy/lib/block_impl.cc  |  4 +--
+ gr-soapy/lib/block_impl.h   |  2 +-
+ gr-soapy/lib/source_impl.cc | 50 +++++++++++++++++++++++++++++++++++--
+ gr-soapy/lib/source_impl.h  | 15 +++++++++++
+ 4 files changed, 66 insertions(+), 5 deletions(-)
+
+diff --git a/gr-soapy/lib/block_impl.cc b/gr-soapy/lib/block_impl.cc
+index 9c4770f5dad..c811c37fcd5 100644
+--- a/gr-soapy/lib/block_impl.cc
++++ b/gr-soapy/lib/block_impl.cc
+@@ -156,9 +156,9 @@ block_impl::block_impl(int direction,
+                        const std::vector<std::string>& tune_args,
+                        const std::vector<std::string>& other_settings)
+     : d_direction(direction),
+-      d_nchan(nchan),
+       d_stream_args(stream_args),
+-      d_channels(nchan)
++      d_channels(nchan),
++      d_nchan(nchan)
+ {
+     check_abi();
+ 
+diff --git a/gr-soapy/lib/block_impl.h b/gr-soapy/lib/block_impl.h
+index f8034086e47..76e494dbc97 100644
+--- a/gr-soapy/lib/block_impl.h
++++ b/gr-soapy/lib/block_impl.h
+@@ -39,7 +39,6 @@ class block_impl : virtual public block
+     const std::string d_args;
+ 
+     size_t d_mtu = 0;
+-    size_t d_nchan;
+     std::string d_stream_args;
+     std::vector<size_t> d_channels;
+     std::string d_soapy_type;
+@@ -68,6 +67,7 @@ class block_impl : virtual public block
+     block_impl& operator=(block_impl&&) = delete;
+     virtual ~block_impl();
+ 
++    size_t d_nchan;
+     std::mutex d_device_mutex;
+     device_ptr_t d_device;
+     SoapySDR::Stream* d_stream = nullptr;
+diff --git a/gr-soapy/lib/source_impl.cc b/gr-soapy/lib/source_impl.cc
+index 88e2c00e3cd..44918ad960d 100644
+--- a/gr-soapy/lib/source_impl.cc
++++ b/gr-soapy/lib/source_impl.cc
+@@ -44,16 +44,40 @@ source_impl::source_impl(const std::string& device,
+                  dev_args,
+                  stream_args,
+                  tune_args,
+-                 other_settings)
++                 other_settings),
++      _add_tag(false),
++      _has_hardware_time(this->has_hardware_time(""))
+ {
+ }
+ 
++bool source_impl::start()
++{
++    _add_tag = true;
++    return block_impl::start();
++}
++
++void source_impl::set_frequency(size_t channel, const std::string& name, double frequency)
++{
++    block_impl::set_frequency(channel, name, frequency);
++    _add_tag = true;
++}
++void source_impl::set_hardware_time(long long timeNs, const std::string& what)
++{
++    block_impl::set_hardware_time(timeNs, what);
++    _add_tag = true;
++}
++void source_impl::set_sample_rate(size_t channel, double sample_rate)
++{
++    block_impl::set_sample_rate(channel, sample_rate);
++    _add_tag = true;
++}
++
+ int source_impl::general_work(int noutput_items,
+                               __GR_ATTR_UNUSED gr_vector_int& ninput_items,
+                               __GR_ATTR_UNUSED gr_vector_const_void_star& input_items,
+                               gr_vector_void_star& output_items)
+ {
+-    long long int time_ns = 0;
++    long long int time_ns = -1;
+     int flags = 0;
+     const long timeout_us = 500000; // 0.5 sec
+     int nout = 0;
+@@ -69,6 +93,27 @@ int source_impl::general_work(int noutput_items,
+         }
+ 
+         if (result >= 0) {
++            if (_add_tag) {
++                _add_tag = false;
++                for (size_t i = 0; i < d_nchan; i++) {
++                    if (_has_hardware_time) {
++                        // Reproduce gr-uhd's 'rx_time' tuple from nano seconds.
++                        const pmt::pmt_t time = pmt::make_tuple(
++                            pmt::from_uint64(time_ns / 1000000000),
++                            pmt::from_double((time_ns % 1000000000) / 1000000000.0L));
++                        this->add_item_tag(i, nitems_written(0), TIME_KEY, time);
++                    }
++                    this->add_item_tag(i,
++                                       nitems_written(0),
++                                       RATE_KEY,
++                                       pmt::from_double(this->get_sample_rate(i)));
++                    this->add_item_tag(i,
++                                       nitems_written(0),
++                                       FREQ_KEY,
++                                       pmt::from_double(this->get_frequency(i)));
++                }
++            }
++
+             nout = result;
+             break;
+         }
+@@ -77,6 +122,7 @@ int source_impl::general_work(int noutput_items,
+ 
+         // Retry on overflow. Data has been lost.
+         case SOAPY_SDR_OVERFLOW:
++            _add_tag = true;
+             std::cerr << "sO" << std::flush;
+             continue;
+ 
+diff --git a/gr-soapy/lib/source_impl.h b/gr-soapy/lib/source_impl.h
+index 8f8040afd83..9439e30a271 100644
+--- a/gr-soapy/lib/source_impl.h
++++ b/gr-soapy/lib/source_impl.h
+@@ -20,6 +20,10 @@
+ #include <SoapySDR/Registry.hpp>
+ #include <SoapySDR/Version.hpp>
+ 
++static const pmt::pmt_t TIME_KEY = pmt::string_to_symbol("rx_time");
++static const pmt::pmt_t FREQ_KEY = pmt::string_to_symbol("rx_freq");
++static const pmt::pmt_t RATE_KEY = pmt::string_to_symbol("rx_rate");
++
+ namespace gr {
+ namespace soapy {
+ 
+@@ -43,6 +47,17 @@ class source_impl : public source, public block_impl
+                      gr_vector_int& ninput_items,
+                      gr_vector_const_void_star& input_items,
+                      gr_vector_void_star& output_items) override;
++
++    bool start() override;
++
++    void
++    set_frequency(size_t channel, const std::string& name, double frequency) override;
++    void set_hardware_time(long long timeNs, const std::string& what) override;
++    void set_sample_rate(size_t channel, double sample_rate) override;
++
++private:
++    bool _add_tag;
++    const bool _has_hardware_time;
+ };
+ 
+ } // namespace soapy
